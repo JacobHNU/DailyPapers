@@ -1,0 +1,11 @@
+# 排除 Python 脚本
+*.py
+
+# 排除根目录零散 PDF（非日期文件夹内的）
+/*.pdf
+
+# 排除 JSON 临时文件
+*.json
+
+# 排除 .gitignore 自身（可选）
+!.gitignore
