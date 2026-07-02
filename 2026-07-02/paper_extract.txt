@@ -1,0 +1,506 @@
+===== PAGE 1 =====
+Scaling the Horizon, Not the Parameters:
+Reaching Trillion-Parameter Performance
+with a 35B Agent
+Agents-A1Team,ShanghaiArtificialIntelligenceLaboratory
+WeintroduceAgents-A1,a35BMixture-of-ExpertsAgenticModelthatreachestrillion-parameter-
+level performance by scaling the agent horizon. We investigate agent-horizon scaling from two
+perspectives: scalinglong-horizontrajectoriesandscalingheterogeneousagentabilities. Tosupport
+thisgoal,webuildalong-horizonknowledge-actioninfrastructurethatconnectsexternalknowledge,
+actions,observations,andverifieroutcomes,producingagentictrajectorieswithanaveragelength
+of 45K tokens. Based on this, we train Agents-A1 with a three-stage recipe. First, we perform
+full-domainsupervisedfine-tuningtoalignthebasemodelwithbroadagenticbehaviors. Second,
+wetraindomain-levelteachermodelstocapturespecializedexpertiseineachdomain. Third,we
+propose a multi-teacher domain-routed on-policy distillation with salient vocabulary alignment
+to improve knowledge transfer efficiency across different domains, unifying six heterogeneous
+domainsintoonedeployablestudentmodel.
+Agents-A1achievesstrongandbroadperformanceforlong-horizonagentbenchmarks. Compared
+with 1T-parameter model such as Kimi-K2.6 and DeepSeek-V4-pro, Agents-A1 achieves leading
+results on SEAL-0 (56.4), IFBench (80.6), HiPhO (46.4), FrontierScience-Olympiad (79.0), and
+MolBench-Bind(56.8),andremainshighlycompetitiveonSciCode(44.3),HLE(47.6)andBrowseC-
+omp(75.5). Wehopethisworkprovidesthecommunitywithapracticalpathforscalingthehorizon
+usinga35Bagentthatcanreachormatchtheperformanceof1Tmodelsonlong-horizontasks.
+Code Model
+Agents-A1 Qwen3.6-35B-A3B Step-3.5-Flash Kimi-K2.6 DeepSeek-V4-pro(Max) gpt-5.5(xhigh)
+1 8 0 0 0 1 8 0 0 0 1 8 0 0 0 79.0 73.0 76.0 78.0 1 8 0 0 0
+2 4 6 0 0 0 47.6 36.2 23.1 54.0 48.2 52.2 2 4 6 0 0 0 46.4 37.7 38.3 41.1 38.7 43.3 2 4 6 0 0 0 60.3 61.0 2 4 6 0 0 0 40.0 2.9 6.7 17.9 13.3 26.7
+0 0 0 0
+HLE HiPhO FrontierScience-Olympiad FrontierScience-Research
+96.0 98.1
+1 8 0 0 0 75.5 67.9 69.0 83.2 83.4 84.4 1 8 0 0 0 86.0 71.0 90.0 90.0 84.0 1 8 0 0 0 1 8 0 0 0 78.6 84.5 80.6 87.4
+4 6 0 0 4 6 0 0 56.3 4 6 0 0 56.4 38.7 36.9 50.5 55.0 42.3 4 6 0 0
+20 20 20 20
+0 0 0 0
+BrowseComp XBench SEAL-0 GAIA
+1 4 6 8 0 0 0 0 0 80.6 64.4 64.6 71.8 73.5 75.9 1 4 6 8 0 0 0 0 0 94.8 91.3 93.5 94.5 93.3 93.3 1 4 6 8 0 0 0 0 0 44.3 35.8 40.4 53.5 50.0 56.1 1 4 6 8 0 0 0 0 0 56.8 48.7 46.0 37.8 62.2
+21.6
+20 20 20 20
+0 0 0 0
+IFBench IFEval SciCode MolBench-Bind
+Figure 1 | Benchmark performance of Agents-A1
+1
+6202
+nuJ
+92
+]LC.sc[
+1v61603.6062:viXra
+
+===== PAGE 2 =====
+Contents
+1 Introduction 3
+2 Knowledge-Guided General Agent Training with Specialized Teachers 4
+2.1 Overview 4
+2.2 Long-Horizon Knowledge-Action Infrastructure 5
+2.2.1 Knowledge-Action Graph Construction with Atomic Abilities 5
+2.2.2 Self-play Graph Search and Expansion 6
+2.3 Domain-Routed On-Policy Distillation with Salient Vocabulary Alignment 6
+2.3.1 Salient Vocabulary Alignment 7
+2.3.2 Domain-routed Normalized Objective 7
+3 Multi-domain Data Pipeline 8
+3.1 Long-horizon Search 8
+3.2 Machine Learning Engineering 9
+3.3 Scientific Reasoning and Research 9
+3.4 Instruction Following 11
+3.5 Tool Calling 12
+4 Three-stage Training Recipe 12
+4.1 Full-domain Supervised Fine-Tuning 12
+4.2 Domain-level Teacher Training 14
+4.2.1 Reinforcement Learning on Search Tasks 14
+4.2.2 Science-enhanced Supervised Fine-Tuning 15
+4.2.3 Reinforcement Learning on Instruction Following 16
+4.2.4 Reinforcement Learning on Tool-calling 16
+4.3 Multi-teacher On-Policy Distillation 17
+5 Experimental Results 18
+5.1 Evaluation Setting 18
+5.2 Results and Observations 20
+5.2.1 Full-domain SFT Results 20
+5.2.2 Results of Domain Teacher Training 20
+5.2.3 Results of On-policy Distillation 21
+5.3 Long-Horizon Task Applications 23
+5.3.1 A 12-Hour Long-Horizon Optimization Run 23
+5.3.2 Closing the Loop in Earth Science Analysis with Agents-A1 24
+6 Limitation and Future Work 25
+References 26
+A Appendix 29
+A.1 Contributions and Acknowledgments 29
+2
+
+===== PAGE 3 =====
+1. Introduction
+Recent progress in LLMs [1, 2, 3, 4, 5, 6] is rapidly pushing AI from passive language models
+towardautonomousagentsthatcanplan,usetools,interactwithenvironments,andimprovethrough
+feedback. In real-world scenarios such as software engineering [7], scientific research [8, 9], and
+complicated decision making [10], agents must operate over long horizons: they need to acquire
+information, decompose tasks, call tools, verify intermediate results, and continuously adjust their
+strategies. Such long-horizon settings are especially challenging since early mistakes can accumulate
+and strategies often need to be revised as new external information becomes available.
+Existing efforts to improve long-horizon agents [11, 12, 13, 14, 15, 16] broadly follow two scaling
+routes. One route [13, 14, 3] scales parameters: frontier models commonly rely on scaling model
+parameterstointernalizeawiderangeofreasoningpatterns,tool-usebehaviorpatterns,anddomain
+knowledge. This route is effective, but it largely makes it difficult to reproduce the same agentic
+competencewithoutcomparablemodelscale,data,andtrainingresources. Theotherroutescalesthe
+horizon rather than enlarging parameters, which makes the intermediate decision process explicit,
+turning knowledge acquisition, action execution, observation interpretation, and verification into
+trainable supervision. However, this route also exposes two key bottlenecks.
+A key bottleneck lies in the knowledge infrastructure required to support the scaling of long-horizon
+trajectories. Long-horizon trajectory training requires a unified environment that connects external
+knowledge, agentic actions, observations, and verification signals, enabling models to learn from
+grounded feedback rather than isolated text supervision. Without such a knowledge-tool interaction
+infrastructure, agents can hardly acquire the ability to plan over extended trajectories, invoke tools
+appropriately, verify evidence, incorporate feedback, and recover from failures in realistic settings.
+Beyond infrastructure, scaling the horizon also requires integrating a broad set of heterogeneous and
+compositional abilities across domains. These abilities include multi-step information retrieval, tool
+use,executableiteration,constrainttracking,andresultreflection. Theyoftenemergeunevenlyacross
+domains and interact with each other in complex ways. As a result, it is challenging to effectively
+combine highly different specialized abilities into one unified agentic model.
+Inthiswork,weintroduceAgents-A1,a35BMoEagenticmodeldesignedtoaddressthekeychallenges
+mentioned above. To support agentic model training, we build a knowledge-action infrastructure
+that connects external knowledge, intermediate actions, observations, execution results, and verifi-
+cation signals, producing agentic trajectories with an average length of 45K tokens. Based on this
+infrastructure, we train Agents-A1 using a three-stage training recipe. First, we perform full-domain
+supervised fine-tuning to obtain a general agentic model with broad long-horizon abilities. Next,
+we train domain-level teacher models to achieve improvements in specialized domains. Finally, we
+propose a domain-routed on-policy distillation (OPD) with salient vocabulary alignment to unify
+capabilities from six heterogeneous domains into a single deployable student model.
+Italsoaimstoprovidethecommunitywithascalabletechnicalpathfrommodel-parameterscalingto
+agent-horizonscaling. AsshowninFig.1,Agents-A1outperforms1T-parametermodels(Kimi-K2.6[1]
+andDeepSeek-V4[5])onSEAL-0[17],IFBench[18],HiPhO[19],FrontierScience-Olympiad[8],and
+MolBench-Bind[20]. ItalsoachievesstrongresultsonSciCode[21],HLE[9],andBrowseComp[10].
+Our contributions include the following three aspects:
+• We present Agents-A1, 35B MoE model designed to scale heterogeneous agentic abilities across
+multiple domains. Agents-A1 can match or even outperform 1T-parameter models in long-
+horizon interactive agent capabilities for science and research.
+• We build a Long-Horizon Knowledge-Action Infrastructure for multi-turn interaction with
+external knowledge and tools in long-horizon tasks. This infrastructure improves the agent’s
+3
+
+===== PAGE 4 =====
+Figure 2 | Overview of the three-stage training pipeline of Agents-A1. From multi-domain data to
+domain-specific teachers and multi-teacher on-policy distillation. First, Agents-A1 is trained with
+full-domain supervised fine-tuning on multi-domain long-horizon data, including search, scientific
+research, engineering, agentic tasks, and instruction following. Then, domain-specific teacher models
+are trained on each domain, and their expertise is transferred to the student model through domain-
+routed on-policy distillation with salient vocabulary alignment.
+ability to obtain useful information, summarize key issues, call the right tools, and execute and
+verify tasks.
+• WeproposeaDomain-RoutedOn-PolicyDistillationwithSalientVocabularyAlignmentoreduce
+conflicts caused by different reasoning patterns across domains when scaling the horizon.
+2. Knowledge-Guided General Agent Training with Specialized Teachers
+2.1. Overview
+As shown in Figure 2, the training process follows a three-stage pipeline. Full-domain supervised
+fine-tuning is first performed to obtain a broadly capable long-horizon agent. Domain-level teachers
+arethentrainedwithtargetedSFTorRL,enablingeachteachertospecializeinaparticularcapability
+or interaction pattern. Finally, these teachers are consolidated into a single deployable student
+through multi-teacher on-policy distillation.
+Within this three-stage pipeline, scaling the horizon further depends on both multi-domain data in-
+frastructureandtheintegrationofspecializedagentcapabilities. Formulti-domaindatainfrastructure,
+aknowledge-actiongraph(KAG)isconstructedtoretainevidence,actions,observations,failures,and
+verifier outcomes, providing process-level supervision beyond final answers, as described in Sec. 2.2.
+For integrating specialized agent capabilities, multi-teacher OPD combines domain teachers into a
+unified student through routed teacher guidance, salient vocabulary alignment, and domain-aware
+aggregation, as detailed in Sec. 2.3.
+4
+
+===== PAGE 5 =====
+Figure 3 | Overview of the knowledge-action infrastructure of Agents-A1. Heterogeneous corpora are
+decomposed into atomic abilities and organized into a knowledge-action graph (KAG) that records
+evidence, actions, observations, and verifier outcomes. A tool-augmented self-play loop expands the
+KAG into domain-specific sub-KAGs for downstream task construction.
+2.2. Long-Horizon Knowledge-Action Infrastructure
+As LLMs scale, training is increasingly constrained by the availability of high-density, verifiable,
+and evolvable supervision. Since public web corpora rarely expose provenance, action traces, tool
+transcripts, execution logs, and verifier outcomes, we construct a knowledge-action infrastructure
+that converts heterogeneous corpora into compositional, verifiable, and self-extending supervision, as
+shown in Figure 3.
+2.2.1. Knowledge-Action Graph Construction with Atomic Abilities
+We decompose long-horizon agentic competence into five atomic abilities: information acquisition,
+toolcalling,executableiteration,evidenceverification,andconstrainttracking. Torecoversupervision
+for these abilities, we represent evidence, actions, observations, and verifier outcomes as first-class
+linked objects in a domain-specific knowledge-action graph (KAG). Motivated by previous work [22],
+we define the KAG as follows.
+Definition 1 (Knowledge-action graph). Given a domain B 𝑑 (𝑑 denotes the domain), the knowledge-
+action graph is a typed 4-tuple
+G = (C , A , O , V ), (1)
+𝑑 𝑑 𝑑 𝑑 𝑑
+where C 𝑑 is the domain corpus, containing evidence chunks, entities, facts, constraints, and other
+contextual resources of the domain; A 𝑑 is the action space, containing tool calls, retrieval queries, code
+editsandexecutions,reasoningsteps,andotheragenticoperationsavailablein B 𝑑; O 𝑑 istheobservation
+space, containing tool returns, retrieved evidence, execution states, and intermediate artifacts produced
+by executing actions on C 𝑑; and V 𝑑 is the verifier set, containing automatic checks over correctness,
+evidence support, constraint satisfaction, and goal completion. The graph is populated by linked t-th
+action records (𝑠 𝑡 ,𝑎 𝑡 ,𝑜 𝑡 ,𝑣 𝑡 ) with 𝑠 𝑡 ⊆ C 𝑑 ∪O <𝑡, 𝑎 𝑡 ∈ A 𝑑, 𝑜 𝑡 ∈ O 𝑑, and 𝑣 𝑡 ∈ V 𝑑. Edges between records
+encode support, dependency, production, verification, and action-transition relations.
+5
+
+===== PAGE 6 =====
+Unlike a conventional knowledge graph that mainly stores entity-relation facts, a KAG preserves the
+process by which an answer is acquired, tested, revised, and verified through the action records
+(𝑠 ,𝑎 ,𝑜 ,𝑣). This process-level structure retains both successful and failed evidence-backed trajecto-
+𝑡 𝑡 𝑡 𝑡
+ries, enabling cross-step credit assignment and reproducible long-horizon supervision.
+For example, a long-horizon search task (Section 3.1) asks the agent to search an answer entity
+by navigating hyperlinks through a wiki corpus and web content, where C holds the pages and
+𝑑
+paragraph evidence, A is the next-hop choice, O the retrieved page text, and V checks whether
+𝑑 𝑑 𝑑
+the answer and its supporting path are recovered. A machine learning engineering task (Section 3.2)
+asks the agent to optimize a Kaggle-style submission by iteratively writing, patching, and executing
+code over a tree of candidate solution, where C holds the competition specification, dataset, and
+𝑑
+execution environment, A is a code edit, run, or commit action, O is the resulting log, metric, or
+𝑑 𝑑
+submission artifact, and V checks grader scores and submission validity.
+𝑑
+2.2.2. Self-play Graph Search and Expansion
+Inpractice,thereasoningdatageneratedinasinglepassisnotnecessarilyofhighquality;itrequires
+multiple iterations and validation to produce. To optimize and improve the quality of G in each
+𝑑
+domain,weexpandG
+𝑑
+throughaproposer–solver–verifiergame: 𝜋
+P
+samplesgraphregionstopropose
+constrainedtasks,𝜋 solvesthemwithretrievalandtools,and𝜋 verifiesanswers,evidence,execution
+S V
+results, trajectories, and shortcut risks. Specifically, each generated task is represented as
+𝑥 = (𝑞, 𝑑, 𝜏, 𝑦★, E , V ), E ⊆ C , V ⊆ V , (2)
+𝑞 𝑞 𝑞 𝑑 𝑞 𝑑
+where 𝑞 is the instruction, 𝑑 the domain label, 𝑦★ the target answer, E the supporting evidence
+𝑞
+required for the task, V the verifier subset applicable to the task, and 𝜏 the resulting trajectory
+𝑞
+𝜏 = (cid:2) (𝑠 1 ,𝑎 1 ,𝑜 1 ,𝑣 1), ..., (𝑠 𝑇 ,𝑎 𝑇 ,𝑜 𝑇 ,𝑣 𝑇 ), 𝑦 (cid:3) , 𝑎 𝑡 ∈ A 𝑑 , 𝑜 𝑡 ∈ O 𝑑 , 𝑣 𝑡 ∈ V 𝑞 ∪{⊥}, (3)
+following the action-record form of Eq. 1, with 𝑣 =⊥ when no step-level verifier fires. A candidate 𝑥
+𝑡
+isacceptedby𝜋 V onlyifitis(i)verifiableagainstsome𝑣 ∈ V 𝑞 ,(ii)valid,i.e.,𝜏reachesananswerthat
+𝑣 accepts, (iii) process-informative, i.e., 𝜏 exercises meaningful intermediate decisions rather than
+collapsing to a one-shot lookup, (iv) evidence-covering, i.e., the required evidence in E is actually
+𝑞
+consulted along 𝜏, and (v) unambiguously specified, with no shortcut solution.
+In this way, solver and verifier feedback is written back to G as linked states, actions, observations,
+𝑑
+evidence,artifacts,andverifieroutcomes. Givenaquery-answerpairandaninitialKAG,theframework
+invokes domain tools, including search, scholar, code execution, agent modules, and workflow
+planners, to enhance the graph. The enhanced graph is specialized into sub-KAGs for coding, agentic
+reasoning, instruction following, MLE, and scientific reasoning. A judge-and-verifier module accepts
+qualified sub-KAGs for downstream task-pipeline construction and routes failed ones back to self-play
+expansion.
+2.3. Domain-Routed On-Policy Distillation with Salient Vocabulary Alignment
+Domain-specificteachersprovidespecializedpolicies,butdeploymentrequiresasinglegeneralpolicy
+model. Existingsampled-tokenOPD[23]isefficientbecauseitscoresonlyrealizedrollouttokens,but
+this single-token approximation leaves nearby high-probability alternatives unconstrained, a source
+of unstable or imbalanced guidance noted in recent analyses [24, 5].
+We therefore use a domain-routed multi-teacher OPD framework with salient vocabulary alignment
+(SVA).Foreachprompt-domainpair (𝑥 ,𝑑 ),afrozenrolloutstudentsamples 𝑦 ∼ 𝜋 (· | 𝑥 ),whilethe
+𝑖 𝑖 𝑖 𝜃𝑠 𝑖
+optimized student 𝜃′ is supervised by the routed teacher 𝜃 ≜ 𝜃𝑑𝑖. SVA replaces the sampled-token
+𝑠 𝑡,𝑖 𝑡
+6
+
+===== PAGE 7 =====
+surrogatebyaligningthestudentandroutedteacheronacompactteacher-supportedlocalvocabulary.
+Losses are computed only on trainable generated tokens 𝑅 , with tool outputs and user turns masked
+𝑖
+out. To handle cross-domain heterogeneity, we aggregate SVA losses with a domain-normalized
+objective, averaging within each active domain and then across active domains, so that frequent or
+high-loss domains do not dominate the student update.
+2.3.1. Salient Vocabulary Alignment
+Atposition𝑡,SVAevaluatesthecurrentstudentandtheroutedteacheronthesamestudent-generated
+prefix (𝑥 ,𝑦 ). Let
+𝑖 𝑖,<𝑡
+𝑝
+𝑠′
+(𝑢) =𝜋
+𝜃
+𝑠
+′
+(𝑢 | 𝑥
+𝑖
+,𝑦
+𝑖,<𝑡
+), 𝑝
+𝑡,𝑖
+(𝑢) =𝜋
+𝜃𝑡,𝑖
+(𝑢 | 𝑥
+𝑖
+,𝑦
+𝑖,<𝑡
+),
+and let S(𝑘) be the set of top-𝑘 valid tokens under the routed teacher distribution. We renormalize
+𝑖,𝑡
+both distributions on this teacher-selected support
+𝑝 (𝑢) 𝑝 (𝑢)
+¯𝑝 (𝑢) = 𝑠′ , ¯𝑝 (𝑢) = 𝑡,𝑖 , 𝑢 ∈ S(𝑘).
+𝑠′ (cid:205) 𝑝 (𝑣) 𝑡,𝑖 (cid:205) 𝑝 (𝑣) 𝑖,𝑡
+𝑣∈S(𝑘) 𝑠′ 𝑣∈S(𝑘) 𝑡,𝑖
+𝑖,𝑡 𝑖,𝑡
+The per-sample SVA objective is the truncated reverse KL over this salient support, averaged over
+trainable model-generated positions
+ℓ(𝑖) (𝜃′;𝜃 ) = 1 ∑︁ ∑︁ ¯𝑝 (𝑢)log ¯𝑝 𝑠′ (𝑢) . (4)
+SVA 𝑠 𝑡,𝑖 |𝑅 | 𝑠′ ¯𝑝 (𝑢)
+𝑖 𝑡,𝑖
+𝑡∈𝑅𝑖𝑢∈S(𝑘)
+𝑖,𝑡
+Because the support is teacher-selected, SVA does not directly constrain student mass outside S(𝑘).
+𝑖,𝑡
+We therefore monitor the student-side coverage
+∑︁
+𝜌(𝑖,𝑡) = 𝑝 (𝑢), (5)
+𝑠′
+𝑢∈S(𝑘)
+𝑖,𝑡
+where higher coverage indicates a closer approximation to full-vocabulary alignment.
+2.3.2. Domain-routed Normalized Objective
+In the multi-domain setting, different domains may induce heterogeneous gradients because they
+emphasize different capabilities, such as response style, reasoning pattern, evidence acquisition, tool
+use, or external interaction. We use hard domain routing, where each sample is supervised only by
+the teacher trained for its domain,
+𝜃 =𝜃𝑑𝑖,
+𝑡,𝑖 𝑡
+rather than by a soft mixture of teachers. This preserves domain-specific teacher preferences and
+avoids mixing incompatible teacher signals at the token level.
+For a mini-batch B, let B denote the subset of samples from domain 𝑑, and let
+𝑑
+D ={𝑑 ∈ D | |B | > 0},
+B 𝑑
+bethesetofactivedomains. Sinceeachper-sampleSVAlossisalreadyaveragedoveritsowntrainable
+response positions, longer trajectories do not dominate merely by contributing more tokens. To
+7
+
+===== PAGE 8 =====
+further prevent high-frequency domains from dominating the update, we average losses within each
+active domain and then average over active domains:
+LMT-SVA(𝜃
+𝑠
+′) =
+|D
+1
+|
+∑︁
+|B
+1
+|
+∑︁ ℓ
+S
+(
+V
+𝑖)
+A
+(𝜃
+𝑠
+′;𝜃
+𝑡,𝑖
+). (6)
+B 𝑑
+𝑑∈DB 𝑖∈B𝑑
+This domain-normalized objective gives each active domain comparable influence while allowing
+eachsampletoreceivesupervisionfromitscorrespondingdomain-specificteacher. Domainlabelsare
+also used to instantiate domain-specific rollout protocols, such as finalization rules, simulated user
+turns, or environment-specific tool execution. After rollouts are generated, all trainable positions are
+optimized using the same SVA objective under their routed teachers.
+3. Multi-domain Data Pipeline
+3.1. Long-horizon Search
+We instantiate the knowledge-action graph (KAG) in the search domain by constructing search
+question data over a large wiki database. Here C is a corpus of wiki pages and paragraph-level
+𝑑
+evidence, A consists of entity transitions induced by hyperlinks and controlled graph walks, O
+𝑑 𝑑
+contains the retrieved page text and connecting evidence, and V checks whether the answer entity
+𝑑
+and its supporting path are recoverable from the provided context. This instantiation targets the
+information acquisition and evidence verification abilities defined in Section 2.2.1. The pipeline first
+converts wiki entries into a directed corpus graph, where each entry is an entity node and inter-entry
+referencesdefineedges. Foreachnode,thepipelineretrievespagetext,paragraphstructure,outgoing
+anchors, canonical titles, and optional structural statistics such as in-degree, out-degree, and text
+length. Non-content tail sections and anchors from list-style paragraphs are filtered to reduce noisy
+transitions, so the resulting graph can provide both the search space and the provenance records
+required by G .
+𝑑
+Relation-chain generation. Relationchainsaregeneratedthroughcontrolledrandomwalksoverthe
+corpus graph and the corresponding domain KAG. Candidate next nodes are selected from outgoing
+anchors after removing visited entities, near-duplicate title variants, disambiguation pages, pages
+without valid text, and pages with insufficient outgoing links. Degree and text-length constraints
+further control node quality and graph diversity. An LLM selector chooses one entity from the
+remaining candidates, balancing local path coherence with optional cross-domain topic shifts. If a
+walkreachesadeadend,ashortauxiliarywalkrecoversaqualifiedcontinuationnode. Eachaccepted
+transition is stored as an action-like record linking the current entity state, the selected hyperlink
+action, the observed target page, and the paragraph evidence that justifies the transition.
+Question-answer pair generation. Each completed chain is serialized with its ordered entity list,
+node texts, and paragraph-level evidence for adjacent entities. The generator treats the final entity
+as the answer, rewrites the chain into a coherent natural-language question, masks proper nouns
+and other identifying information, and requires the solver to recover the masked answer entity. A
+verifier then checks the answer identity and evidence support against the serialized chain. Each
+chain, therefore, yields a verifiable search-domain training instance that requires following indirect
+long-contextevidenceratherthanrelyingondirectnamematching,whilepreservingtheprovenance,
+action path, observation text, and verifier target needed by the KAG.
+Trajectory collection and quality control. Search trajectories are collected by allowing strong
+models to execute deep-research tasks with the search, read_page, and code tools in the real
+Internet environment. The search tool queries a commercial search engine and returns the top
+resultsperquery. Theread_pagetoolextractsweb-pagecontentandusesanLLMtosummarizethe
+8
+
+===== PAGE 9 =====
+extracted information before it is returned to the agent context. The code tool allows the model to
+write and execute Python code in a sandboxed environment, supporting intermediate computation
+and data processing during the search process. The maximum context window is set to 256K tokens,
+and no additional constraint is imposed on the number of tool calls within a single turn. During
+post-processing, we remove trajectories with wrong answers, overly short interaction histories, or
+obvious guessing behavior. For trajectories that reach the maximum turn limit, we roll back to the
+previous turn and use an explicit user prompt to force the model to produce an answer. The retained
+trajectories provide long-horizon supervision for search behavior that combines query formulation,
+page reading, evidence integration, and answer verification under realistic web observations.
+3.2. Machine Learning Engineering
+Following the knowledge-action infrastructure in Section 2.2, we instantiate machine learning engi-
+neering (MLE) as a KAG over executable solution search. Here C contains competition specifications,
+𝑑
+datasets, and execution environments; A captures solution edits, experiment runs, tree navigation,
+𝑑
+node invalidation, and answer commitment; O records logs, metrics, artifacts, and generated sub-
+𝑑
+missions; and V provides grader scores, submission-format checks, and metric-reliability checks.
+𝑑
+Because a candidate solution is executable code whose quality is known only after grading, each
+trajectory becomes a verifier-guided expansion of the solution graph.
+Task sources. We assemble gradeable competitions from MLE-Dojo [25] and ended Kaggle com-
+petitions processed by our automated framework. MLE-Dojo provides curated Kaggle-style tasks
+with held-out answers and local graders across tabular, vision, NLP, audio, and time-series settings.
+For ended competitions, our framework curates the task description and leaderboard information,
+re-splitspublicdataintofreshtrain/testpartitions,constructsprivateanswers,andsynthesizesalocal
+evaluator with submission validation. This produces a diverse and refreshable pool of optimization
+tasks while reducing overfitting to any static benchmark distribution.
+Agentic harness. Trajectories are generated in an agentic harness that grows a tree of executable
+solutionnodes,followingpriorsolution-searchworkflowssuchasMLEvolve[26]. Writingafullscript
+opens a new root, patching a node spawns a child, and executing a node attaches observations such
+as logs, exceptions, metrics, artifacts, and submission validity. This tree forms the executable core of
+the MLE-domain KAG: branches encode alternative attempts, verifier outcomes guide expansion, and
+failed or invalidated nodes provide negative evidence for later decisions.
+The harness exposes this process through a compact tool interface, summarized in Table 1, covering
+code authoring, execution, tree navigation, answer management, persistent memory, and delegated
+analysis. For long runs, an isolated analyze sub-agent investigates data or results and returns a
+report, while context compaction summarizes earlier steps into a digest.
+Trajectory collection and quality control. We collect teacher trajectories over the task pool with
+multipleseedsandpromptvariants,replaythemwiththelocalevaluator,andretainrunsthatproduce
+valid and competitive committed submissions. After trimming regressive or degenerate segments, we
+deduplicate the remaining runs and serialize them into a unified message schema with loss masks
+for teacher-generated content. The serialization preserves node relations, execution observations,
+verifier outcomes, and committed-answer history, making the solution-search structure recoverable
+for training.
+3.3. Scientific Reasoning and Research
+Following the knowledge-action infrastructure in Section 2.2, we instantiate scientific reasoning
+as a domain-specific KAG over scientific problem-solving processes. Formally, given the scientific
+knowledge-action graph G = (C ,A ,O ,V ), C contains scientific problem components including
+𝑑 𝑑 𝑑 𝑑 𝑑 𝑑
+9
+
+===== PAGE 10 =====
+Table 1 | Our designed tool interface used by Agents-A1, according to the MLE agentic harness.
+Thetoolsdefineacompactactionspacethroughwhichthemodelperformscodeauthoring,execution,
+search-tree management, persistent memory, and delegated analysis.
+Tool Function
+Code authoring & execution
+write_full_code Author a complete training script from scratch; opens a new root
+node (a fresh line of attack).
+patch_code Apply a localized edit to a node’s code; spawns a child node, pre-
+serving tree history for incremental refinement.
+execute_code Run a node, capture stdout and exceptions, extract its validation
+metric, and check the emitted submission for validity.
+execute_bash Runaguardedshellcommandforenvironmentsetupandinspection
+(installs, GPU checks, file operations).
+Search-tree navigation & answer management
+list_nodes Survey the solution tree: the selected answer, the recent answer
+trail, invalidated history, and a metric-ranked listing.
+select_node Inspect one node in full (code, plan, output, metric, parent chain)
+before revisiting or branching from it.
+invalidate_node Excludeanodewhosemetricisuntrustworthy(leakage,overfitting)
+from ranking and submission.
+update_answer Commitanodeasthecurrentsubmissioncandidate,writtentothe
+canonical path the grader reads.
+get_current_answer Report the node currently committed as the answer.
+Persistent memory
+write_notes / read_notes Append to / re-read a notebook that survives context compaction
+(decisions, failed strategies and why, hypotheses).
+Sub-agent
+analyze Spawnanisolatedanalysissub-agentthatexploresdataandresults
+in its own context window and returns a single structured report.
+problem statements, topics, keywords, and solution structures; A consists of reasoning actions such
+𝑑
+as decomposition, transformation, retrieval, and computation; O captures intermediate reasoning
+𝑑
+states,externalevidence,andexecutionoutputs;andV containsverificationsignalsovercorrectness,
+𝑑
+consistency, and scientific validity.
+ProblemConstruction. Wefirstcollectalarge-scalepoolofscientificproblemsspanningfundamental
+domains such as mathematics, physics, and related areas. Based on this seed pool, we construct a
+knowledge-actiongraph,whereeachseedisrepresentedasinterconnectednodesencodingitsproblem
+statement,keywords,andsolutioncomponents,forminganinitialknowledge-alignedsubgraph. Built
+upon this graph, we perform self-evolving scientific KAG enhancement introduced in Section 2.2
+via self-play graph search and expansion, where local subgraphs are sampled and systematically
+rewritten to improve scientific problems along two complementary directions: (i) harder reasoning
+variants, which increase required domain knowledge depth, introduce complex symbolic structures,
+and extend multi-step derivations; and (ii) interaction-enriched variants, which inject cross-domain
+knowledge, incorporate concepts requiring external retrieval, and increase computational demands
+suchascode-basednumericalexecution. Forproblemsthatalreadyexhibitstrongreasoningabilityor
+strong interaction requirements, we retain their original form without modification. Through this
+10
+
